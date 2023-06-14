@@ -1,10 +1,11 @@
 package main
 
 import (
-	//"encoding/json"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"text/template"
@@ -53,27 +54,75 @@ func run() error {
 	)
 	flag.Parse()
 
-	_ = jsonFile
-	_ = templateFile
-
-	templateData := template.New("templateData").Option("missingkey=error")
-	templateData, err := templateData.Parse(*literalTemplate)
-	if err != nil {
-		return err
+	if *literalJson == "" && *jsonFile == "" {
+		return errors.New("can't find json")
+	}
+	if *literalTemplate == "" && *templateFile == "" {
+		return errors.New("can't find template")
+	}
+	if *literalJson != "" && *jsonFile != "" {
+		return errors.New("you can't have two json")
+	}
+	if *literalTemplate != "" && *templateFile != "" {
+		return errors.New("you can't have two templates")
 	}
 
-	var a any
-	err = json.Unmarshal([]byte(*literalJson), &a)
-	if err != nil {
-		return err
+	var jsonData any
+
+	if *literalJson != "" {
+		err := json.Unmarshal([]byte(*literalJson), &jsonData)
+		if err != nil {
+			return err
+		}
+
+	} else {
+		jsonFileData, err := os.Open(*jsonFile)
+		if err != nil {
+			return err
+		}
+
+		j, err := io.ReadAll(jsonFileData)
+		if err != nil {
+			return err
+		}
+
+		err = json.Unmarshal(j, &jsonData)
+		if err != nil {
+			return err
+		}
+	}
+
+	templateData := template.New("templateData").Option("missingkey=error")
+
+	if *literalTemplate != "" {
+		_, err := templateData.Parse(*literalTemplate)
+		if err != nil {
+			return err
+		}
+
+	} else {
+		templateFileData, err := os.Open(*templateFile)
+		if err != nil {
+			return err
+		}
+
+		t, err := io.ReadAll(templateFileData)
+		if err != nil {
+			return err
+		}
+
+		_, err = templateData.Parse(string(t))
+		if err != nil {
+			return err
+		}
 	}
 
 	var res strings.Builder
-	if err = templateData.Execute(&res, a); err != nil {
+	if err := templateData.Execute(&res, jsonData); err != nil {
 		return err
 	}
-	fmt.Println(res.String())
 
+	fmt.Println(res.String())
 	return nil
 
 }
